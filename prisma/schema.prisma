@@ -11,12 +11,11 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-
-model Workflow {
-  id           String   @id @default(uuid())
-  title        String
-  workflowJson Json
-  createdAt    DateTime @default(now())
+model workflow {
+ id String @id @default(uuid())
+ title String
+ workflowJson Json
+ createdAt DateTime @default(now()) 
 }
 
 model Execution {

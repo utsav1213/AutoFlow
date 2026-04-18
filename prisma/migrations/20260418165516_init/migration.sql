@@ -1,11 +1,11 @@
 -- CreateTable
-CREATE TABLE "Workflow" (
+CREATE TABLE "workflow" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
-    "workflowJson" JSONB NOT NULL,
+    "workflowjson" JSONB NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Workflow_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "workflow_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
