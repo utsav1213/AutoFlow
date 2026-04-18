@@ -5,7 +5,7 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -30,4 +30,10 @@ model ExecutionStep {
   executionId String
   nodeId      String
   status      String
+}
+model Credential {
+  id        String   @id @default(uuid())
+  type      String   // telegram, resend
+  data      Json     // store token here
+  createdAt DateTime @default(now())
 }
