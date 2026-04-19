@@ -1,7 +1,7 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Get a free hosted Postgres database in seconds: \`npx create-db\`
 
 generator client {
   provider = "prisma-client"
@@ -11,29 +11,53 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-model workflow {
- id String @id @default(uuid())
- title String
- workflowJson Json
- createdAt DateTime @default(now()) 
+
+model Workflow {
+  id           String      @id @default(uuid())
+  title        String
+  enabled      Boolean     @default(true)
+  workflowJson Json
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  webhook      Webhook?
+  executions   Execution[]
+}
+
+model Webhook {
+  id         String   @id @default(uuid())
+  title      String
+  method     String
+  path       String   @unique
+  header     String?
+  secret     String?
+  workflowId String   @unique
+  workflow   Workflow @relation(fields: [workflowId], references: [id])
+  createdAt  DateTime @default(now())
 }
 
 model Execution {
-  id          String   @id @default(uuid())
+  id          String          @id @default(uuid())
   workflowId  String
+  workflow    Workflow        @relation(fields: [workflowId], references: [id])
   status      String
-  createdAt   DateTime @default(now())
+  tasksDone   String          @default("0")
+  createdAt   DateTime        @default(now())
+  steps       ExecutionStep[]
 }
 
 model ExecutionStep {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   executionId String
+  execution   Execution @relation(fields: [executionId], references: [id])
   nodeId      String
   status      String
+  createdAt   DateTime  @default(now())
 }
+
 model Credential {
   id        String   @id @default(uuid())
-  type      String   // telegram, resend
-  data      Json     // store token here
+  title     String
+  platform  String   // telegram, resend, llm
+  data      Json     // store token/api keys here
   createdAt DateTime @default(now())
 }

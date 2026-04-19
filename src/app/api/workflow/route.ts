@@ -1,13 +1,21 @@
-import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+
+export async function GET() {
+  const workflows = await (prisma as any).workflow.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+  return NextResponse.json(workflows);
+}
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  const { title, enabled, workflowJson } = await req.json();
 
-  const workflow = await prisma.workflow.create({
+  const workflow = await (prisma as any).workflow.create({
     data: {
-      title: body.title,
-      workflowJson: body.workflowJson,
+      title,
+      enabled,
+      workflowJson,
     },
   });
 
