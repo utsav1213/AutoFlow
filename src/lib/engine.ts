@@ -54,13 +54,25 @@ export async function runWorkflow(workflow: any, executionId: string) {
 
       // LLM Response action
       if (node.data?.type === "llm" || node.type === "llm") {
-        const credential = await prisma.credential.findUnique({
-          where: { id: node.data?.credentialId || node.credentialId },
-        });
+        let apiKey, provider;
 
-        const data = credential?.data as { provider?: string; apiKey?: string };
-        const provider = data?.provider || "openai";
-        const apiKey = data?.apiKey;
+        if (node.data?.credentialId || node.credentialId) {
+          const credential = await prisma.credential.findUnique({
+            where: { id: node.data?.credentialId || node.credentialId },
+          });
+          const data = credential?.data as {
+            provider?: string;
+            apiKey?: string;
+          };
+          provider = data?.provider || "openai";
+          apiKey = data?.apiKey;
+        } else {
+          // Default to gemini if no credential and use env var
+          provider = "gemini";
+          apiKey =
+            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+            process.env.GEMINI_API_KEY;
+        }
 
         if (!apiKey)
           throw new Error(`Missing API Key for LLM provider: ${provider}`);
@@ -78,12 +90,22 @@ export async function runWorkflow(workflow: any, executionId: string) {
             { headers: { Authorization: `Bearer ${apiKey}` } },
           );
         } else if (provider === "gemini") {
-          await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-            {
-              contents: [{ parts: [{ text: prompt }] }],
-            },
-          );
+          const { generateText } = await import("ai");
+          const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+
+          const google = createGoogleGenerativeAI({
+            apiKey: apiKey,
+          });
+
+          const { text } = await generateText({
+            model: google("gemini-1.5-flash"),
+            prompt: prompt,
+          });
+
+          console.log("LLM output:", text);
+
+          // Store output in node data for subsequent nodes if needed
+          node.data = { ...node.data, output: text };
         } else if (provider === "anthropic") {
           await axios.post(
             "https://api.anthropic.com/v1/messages",

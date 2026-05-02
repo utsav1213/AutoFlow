@@ -32,11 +32,16 @@ const CustomNode = ({ data, selected }: any) => {
 
       <div className="px-4 py-3 flex items-center gap-3">
         <div className="text-2xl px-1">{data.icon}</div>
-        <div className="flexflex-col">
+        <div className="flex flex-col">
           <div className="text-sm font-semibold text-gray-100">
             {data.label}
           </div>
           <div className="text-xs text-gray-500 mt-0.5">{data.description}</div>
+          {data.output && (
+            <div className="mt-2 text-xs text-green-400 bg-green-900/20 p-2 rounded max-w-[200px] break-words border border-green-500/20">
+              {data.output}
+            </div>
+          )}
         </div>
       </div>
 
@@ -68,8 +73,10 @@ function EditorContent() {
   const [excludeCron, setExcludeCron] = useState(false);
   const [excludeLLMAction, setExcludeLLMAction] = useState(false);
   const [excludeLLMCreds, setExcludeLLMCreds] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
     try {
       const stored = localStorage.getItem("autoflow.buildOptions");
       if (stored) {
@@ -216,6 +223,14 @@ function EditorContent() {
     }
   };
 
+  if (!isMounted) {
+    return (
+      <div className="w-full h-[800px] border border-gray-800 bg-[#0f0f0f] flex items-center justify-center text-white">
+        Loading Editor...
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-[800px] border border-gray-800 bg-[#0f0f0f] flex text-white relative flex-row overflow-hidden font-sans">
       {/* Left Toolbar (Nodes Palette) */}
@@ -315,24 +330,23 @@ function EditorContent() {
               <span className="text-lg">✉️</span>{" "}
               <span className="text-sm font-medium">Email (Resend)</span>
             </div>
-            {!excludeLLMAction && (
-              <div
-                className="px-3 py-2 flex items-center gap-3 border border-gray-700 bg-[#222] rounded cursor-grab hover:bg-[#2a2a2a] transition-colors"
-                onDragStart={(e) =>
-                  onDragStart(e, {
-                    category: "action",
-                    type: "llm",
-                    icon: "🤖",
-                    label: "LLM Response",
-                    description: "Generate text",
-                  })
-                }
-                draggable
-              >
-                <span className="text-lg">🤖</span>{" "}
-                <span className="text-sm font-medium">LLM Response</span>
-              </div>
-            )}
+            {/* Unconditionally show LLM Response node */}
+            <div
+              className="px-3 py-2 flex items-center gap-3 border border-gray-700 bg-[#222] rounded cursor-grab hover:bg-[#2a2a2a] transition-colors"
+              onDragStart={(e) =>
+                onDragStart(e, {
+                  category: "action",
+                  type: "llm",
+                  icon: "🤖",
+                  label: "LLM Response",
+                  description: "Generate text",
+                })
+              }
+              draggable
+            >
+              <span className="text-lg">🤖</span>{" "}
+              <span className="text-sm font-medium">LLM Response</span>
+            </div>
           </div>
         </div>
       </aside>
@@ -528,7 +542,7 @@ function EditorContent() {
                 <>
                   <div>
                     <label className="block text-xs font-semibold text-gray-400 mb-1">
-                      Credential ID (OpenAI/Anthropic/Gemini)
+                      Credential ID (Optional for Gemini in .env)
                     </label>
                     <input
                       type="text"
@@ -536,7 +550,7 @@ function EditorContent() {
                       onChange={(e) =>
                         updateNodeData("credentialId", e.target.value)
                       }
-                      placeholder="UUID"
+                      placeholder="Leave blank to use .env GOOGLE_GENERATIVE_AI_API_KEY"
                       className="w-full bg-[#0a0a0a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500"
                     />
                   </div>
@@ -547,11 +561,36 @@ function EditorContent() {
                     <textarea
                       value={selectedNode.data.prompt || ""}
                       onChange={(e) => updateNodeData("prompt", e.target.value)}
-                      placeholder="Summarize this text: {{previous_node.data}}"
+                      placeholder="Example: What is the sum of 2+2?"
                       rows={6}
                       className="w-full bg-[#0a0a0a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500"
                     />
                   </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch("/api/llm/test", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            prompt: selectedNode.data.prompt,
+                            credentialId: selectedNode.data.credentialId,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.output) {
+                          updateNodeData("output", data.output);
+                        } else {
+                          alert(data.error || "Failed to get LLM response");
+                        }
+                      } catch (err) {
+                        alert("Error contacting LLM");
+                      }
+                    }}
+                    className="w-full mt-2 px-4 py-2 border border-blue-900 bg-blue-950/30 hover:bg-blue-900/50 text-blue-500 text-sm font-bold rounded transition-colors"
+                  >
+                    Test LLM Node
+                  </button>
                 </>
               )}
             </div>
