@@ -1,12 +1,9 @@
-import ReachflowEditor from "@/components/ReachflowEditor";
+import KeyflowEditor from "@/components/KeyflowEditor";
 
 export default function EditorPage() {
   return (
-    <div className="min-h-screen p-8 bg-zinc-50 dark:bg-black">
-      <h2 className="mb-4 text-2xl font-semibold text-black dark:text-white">
-        Flow Editor
-      </h2>
-      <ReachflowEditor />
+    <div className="w-screen h-screen overflow-hidden bg-[#0A0A0A] text-white">
+      <KeyflowEditor />
     </div>
   );
 }
