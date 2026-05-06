@@ -33,9 +33,9 @@ import {
   Network,
   Maximize,
   Minus,
-  MessageSquare
+  MessageSquare,
 } from "lucide-react";
-import '@xyflow/react/dist/style.css';
+import "@xyflow/react/dist/style.css";
 
 function EditorContent() {
   const [nodes, setNodes] = useState([]);
@@ -51,7 +51,9 @@ function EditorContent() {
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 cursor-pointer">
             <Share2 className="w-5 h-5 text-orange-500 fill-orange-500" />
-            <span className="text-white font-semibold text-lg tracking-tight">Keyflow</span>
+            <span className="text-white font-semibold text-lg tracking-tight">
+              Keyflow
+            </span>
           </div>
 
           <nav className="flex items-center gap-6 ml-4 text-sm font-medium">
@@ -109,7 +111,9 @@ function EditorContent() {
           {/* Left Tools */}
           <div className="flex items-center gap-2 pointer-events-auto">
             <div className="flex items-center bg-[#18181b] border border-[#27272a] rounded-md px-3 py-1.5 shadow-lg">
-              <span className="text-sm font-medium text-white mr-3">Untitled Flow</span>
+              <span className="text-sm font-medium text-white mr-3">
+                Untitled Flow
+              </span>
               <span className="text-[10px] uppercase font-bold text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded mr-3">
                 Draft
               </span>
@@ -167,8 +171,13 @@ function EditorContent() {
             proOptions={{ hideAttribution: true }}
             className="bg-[#0a0a0a]"
           >
-            <Background color="#27272a" variant={BackgroundVariant.Dots} gap={20} size={1} />
-            
+            <Background
+              color="#27272a"
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1}
+            />
+
             {nodes.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="flex items-center gap-2 text-[#71717a] text-sm">
