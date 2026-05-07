@@ -36,13 +36,13 @@ model Webhook {
 }
 
 model Execution {
-  id          String          @id @default(uuid())
-  workflowId  String
-  workflow    Workflow        @relation(fields: [workflowId], references: [id])
-  status      String
-  tasksDone   String          @default("0")
-  createdAt   DateTime        @default(now())
-  steps       ExecutionStep[]
+  id         String          @id @default(uuid())
+  workflowId String
+  workflow   Workflow        @relation(fields: [workflowId], references: [id])
+  status     String
+  tasksDone  String          @default("0")
+  createdAt  DateTime        @default(now())
+  steps      ExecutionStep[]
 }
 
 model ExecutionStep {
@@ -57,7 +57,70 @@ model ExecutionStep {
 model Credential {
   id        String   @id @default(uuid())
   title     String
-  platform  String   // telegram, resend, llm
-  data      Json     // store token/api keys here
+  platform  String // telegram, resend, llm
+  data      Json // store token/api keys here
   createdAt DateTime @default(now())
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }

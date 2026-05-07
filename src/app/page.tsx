@@ -11,6 +11,7 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 
 export default function Home() {
   return (
@@ -44,18 +45,27 @@ export default function Home() {
           </Link>
         </nav>
         <div className="flex items-center gap-4 text-sm font-medium">
-          <Link
-            href="/login"
-            className="hidden text-slate-600 transition-colors hover:text-slate-900 dark:text-slate-300 dark:hover:text-white sm:block"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/editor"
-            className="flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-white transition-all hover:bg-indigo-700 hover:ring-2 hover:ring-indigo-600/50 hover:ring-offset-2 dark:hover:ring-offset-black"
-          >
-            Start Building <ArrowRight className="h-4 w-4" />
-          </Link>
+          <Show when="signed-out">
+            <SignInButton>
+              <button className="hidden text-slate-600 transition-colors hover:text-slate-900 dark:text-slate-300 dark:hover:text-white sm:block">
+                Sign In
+              </button>
+            </SignInButton>
+            <SignUpButton>
+              <button className="flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-white transition-all hover:bg-indigo-700 hover:ring-2 hover:ring-indigo-600/50 hover:ring-offset-2 dark:hover:ring-offset-black">
+                Sign Up
+              </button>
+            </SignUpButton>
+          </Show>
+          <Show when="signed-in">
+            <Link
+              href="/editor"
+              className="flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-white transition-all hover:bg-indigo-700 hover:ring-2 hover:ring-indigo-600/50 hover:ring-offset-2 dark:hover:ring-offset-black"
+            >
+              Start Building <ArrowRight className="h-4 w-4" />
+            </Link>
+            <UserButton />
+          </Show>
         </div>
       </header>
 
