@@ -4,10 +4,57 @@ import axios from "axios";
 export async function runWorkflow(workflow: any, executionId: string) {
   let completedTasks = 0;
   const nodes = workflow.nodes || [];
+  const edges = workflow.edges || [];
 
-  for (const node of nodes) {
+  const nodeMap = new Map(nodes.map((n: any) => [n.id, n]));
+  const targetIds = new Set(edges.map((e: any) => e.target));
+
+  // Find starting nodes: category === "trigger" OR no incoming edges
+  const startNodes = nodes.filter(
+    (n: any) => n.data?.category === "trigger" || !targetIds.has(n.id),
+  );
+
+  // Queue holds { node, inputData (from previous node) }
+  const queue: { node: any; inputData: any }[] = startNodes.map((n: any) => ({
+    node: n,
+    inputData: {},
+  }));
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const { node, inputData } = queue.shift()!;
+    if (visited.has(node.id)) continue;
+    visited.add(node.id);
+
     try {
-      console.log("Running node:", node);
+      console.log(`Running node [${node.data?.type}]:`, node.id);
+
+      // Node output will hold the final result of this node's executed action
+      let outputData = node.data?.output || null;
+
+      // Logic: If / Else Condition
+      let handledCondition = false;
+      let conditionResult = false;
+      if (node.data?.type === "condition" || node.type === "condition") {
+        const expression =
+          node.data?.expression || node.params?.expression || "false";
+        try {
+          // create a safe evaluator where $input is the previous node's data
+          const fn = new Function("$input", `return ${expression};`);
+          conditionResult = fn(inputData);
+          console.log(
+            `Evaluating Condition: ${expression} with $input=`,
+            inputData,
+            "Result:",
+            conditionResult,
+          );
+        } catch (e) {
+          console.error("Condition error:", e);
+          conditionResult = false;
+        }
+        outputData = conditionResult; // save result directly
+        handledCondition = true;
+      }
 
       // Telegram action
       if (node.data?.type === "telegram" || node.type === "telegram") {
@@ -81,7 +128,7 @@ export async function runWorkflow(workflow: any, executionId: string) {
           node.data?.prompt || node.params?.prompt || "Say hello world";
 
         if (provider === "openai") {
-          await axios.post(
+          const res = await axios.post(
             "https://api.openai.com/v1/chat/completions",
             {
               model: "gpt-3.5-turbo",
@@ -89,6 +136,7 @@ export async function runWorkflow(workflow: any, executionId: string) {
             },
             { headers: { Authorization: `Bearer ${apiKey}` } },
           );
+          outputData = res.data?.choices?.[0]?.message?.content;
         } else if (provider === "gemini") {
           const { generateText } = await import("ai");
           const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
@@ -103,11 +151,9 @@ export async function runWorkflow(workflow: any, executionId: string) {
           });
 
           console.log("LLM output:", text);
-
-          // Store output in node data for subsequent nodes if needed
-          node.data = { ...node.data, output: text };
+          outputData = text;
         } else if (provider === "anthropic") {
-          await axios.post(
+          const res = await axios.post(
             "https://api.anthropic.com/v1/messages",
             {
               model: "claude-3-haiku-20240320",
@@ -122,8 +168,73 @@ export async function runWorkflow(workflow: any, executionId: string) {
               },
             },
           );
+          outputData = res.data?.content?.[0]?.text;
         }
       }
+
+      // HTTP Request action
+      if (node.data?.type === "http" || node.type === "http") {
+        const url = node.data?.url || node.params?.url;
+        const method = (
+          node.data?.method ||
+          node.params?.method ||
+          "GET"
+        ).toLowerCase();
+        let headers = {};
+        try {
+          headers = JSON.parse(
+            node.data?.headers || node.params?.headers || "{}",
+          );
+        } catch (e) {}
+        let data = undefined;
+        try {
+          data = JSON.parse(node.data?.body || node.params?.body || "{}");
+        } catch (e) {
+          data = node.data?.body;
+        }
+
+        if (!url) throw new Error("Missing HTTP URL");
+
+        const response = await axios({ method, url, headers, data });
+        outputData =
+          typeof response.data === "object"
+            ? JSON.stringify(response.data)
+            : response.data;
+      }
+
+      // Web Scraper action
+      if (node.data?.type === "scraper" || node.type === "scraper") {
+        const url = node.data?.url || node.params?.url;
+        const selector = node.data?.selector || node.params?.selector;
+
+        if (!url) throw new Error("Missing Scraper URL");
+
+        const { data } = await axios.get(url);
+        let output = "";
+        if (selector) {
+          const cheerio = await import("cheerio");
+          const $ = cheerio.load(data);
+          output = $(selector).text();
+        } else {
+          output = data.substring(0, 2000); // return basic truncated mock
+        }
+
+        outputData = output;
+      }
+
+      // File Storage action
+      if (node.data?.type === "storage" || node.type === "storage") {
+        const path = node.data?.path || node.params?.path;
+        const content = node.data?.content || node.params?.content;
+        const provider = node.data?.provider || "local";
+
+        if (!path) throw new Error("Missing File Path");
+
+        console.log(`[Storage Node - ${provider}] Saving to ${path}:`, content);
+        outputData = `Saved to ${provider} at ${path}`;
+      }
+
+      node.data = { ...node.data, output: outputData };
 
       completedTasks++;
 
@@ -140,6 +251,23 @@ export async function runWorkflow(workflow: any, executionId: string) {
         where: { id: executionId },
         data: { tasksDone: `${completedTasks}/${nodes.length}` },
       });
+
+      // Handle branching & queue next nodes
+      const outgoingEdges = edges.filter((e: any) => e.source === node.id);
+      for (const edge of outgoingEdges) {
+        if (handledCondition) {
+          // If this was a condition, only traverse the matching edge (true or false source handle)
+          const expectedHandle = conditionResult ? "true" : "false";
+          if (edge.sourceHandle && edge.sourceHandle !== expectedHandle) {
+            continue; // skip this edge
+          }
+        }
+
+        const nextNode = nodeMap.get(edge.target);
+        if (nextNode) {
+          queue.push({ node: nextNode, inputData: node.data });
+        }
+      }
     } catch (error: any) {
       console.error("Error executing node", node.id, error?.message);
       await prisma.executionStep.create({
