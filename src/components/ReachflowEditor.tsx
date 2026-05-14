@@ -80,6 +80,31 @@ const CustomNode = ({ data, selected }: any) => {
             />
           </div>
         </div>
+      ) : data.type === "loop" ? (
+        <div className="absolute -right-3 top-0 bottom-0 flex flex-col justify-center gap-4">
+          <div className="relative group">
+            <span className="absolute right-4 text-[10px] text-blue-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+              Loop
+            </span>
+            <Handle
+              type="source"
+              id="loop"
+              position={Position.Right}
+              className="w-3 h-3 bg-blue-500 border-2 border-[#1a1a1a] !relative !right-0 !transform-none"
+            />
+          </div>
+          <div className="relative group">
+            <span className="absolute right-4 text-[10px] text-gray-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+              Done
+            </span>
+            <Handle
+              type="source"
+              id="done"
+              position={Position.Right}
+              className="w-3 h-3 bg-gray-400 border-2 border-[#1a1a1a] !relative !right-0 !transform-none"
+            />
+          </div>
+        </div>
       ) : (
         <Handle
           type="source"
@@ -381,6 +406,38 @@ function EditorContent() {
       icon: "🔀",
       label: "If / Else",
       description: "Branch workflow",
+      data: { category: "action" },
+    },
+    {
+      category: "Logic",
+      type: "delay",
+      icon: "⏳",
+      label: "Delay",
+      description: "Pause workflow execution",
+      data: { category: "action" },
+    },
+    {
+      category: "Data",
+      type: "code",
+      icon: "💻",
+      label: "Custom Code",
+      description: "Execute JavaScript",
+      data: { category: "action" },
+    },
+    {
+      category: "Data",
+      type: "sql",
+      icon: "🗄️",
+      label: "SQL Query",
+      description: "Run raw SQL on DB",
+      data: { category: "action" },
+    },
+    {
+      category: "Logic",
+      type: "loop",
+      icon: "🔁",
+      label: "For-Each Loop",
+      description: "Iterate over array",
       data: { category: "action" },
     },
   ];
@@ -855,6 +912,101 @@ function EditorContent() {
                       />
                       <p className="text-[10px] text-gray-500 mt-1">
                         E.g., `$input` contains previous node output.
+                      </p>
+                    </div>
+                  </>
+                )}
+                {selectedNode.data.type === "delay" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">
+                        Delay Amount
+                      </label>
+                      <input
+                        type="number"
+                        value={selectedNode.data.duration || ""}
+                        onChange={(e) =>
+                          updateNodeData("duration", e.target.value)
+                        }
+                        placeholder="1000"
+                        className="w-full bg-[#1a1a1a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500"
+                      />
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        In milliseconds (e.g. 1000 = 1 second)
+                      </p>
+                    </div>
+                  </>
+                )}
+                {selectedNode.data.type === "code" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">
+                        Custom JavaScript
+                      </label>
+                      <textarea
+                        value={selectedNode.data.code || ""}
+                        onChange={(e) => updateNodeData("code", e.target.value)}
+                        placeholder="return { hello: 'world' };"
+                        rows={6}
+                        className="w-full bg-[#1a1a1a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500 font-mono"
+                      />
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        `$input` is available. Must return a value. Supports
+                        `await`.
+                      </p>
+                    </div>
+                  </>
+                )}
+                {selectedNode.data.type === "sql" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">
+                        Connection String
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.data.connectionString || ""}
+                        onChange={(e) =>
+                          updateNodeData("connectionString", e.target.value)
+                        }
+                        placeholder="postgresql://user:pass@host/db"
+                        className="w-full bg-[#1a1a1a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">
+                        SQL Query
+                      </label>
+                      <textarea
+                        value={selectedNode.data.query || ""}
+                        onChange={(e) =>
+                          updateNodeData("query", e.target.value)
+                        }
+                        placeholder="SELECT * FROM users;"
+                        rows={4}
+                        className="w-full bg-[#1a1a1a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500 font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+                {selectedNode.data.type === "loop" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1">
+                        Array Expression (JS)
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.data.arrayExpression || ""}
+                        onChange={(e) =>
+                          updateNodeData("arrayExpression", e.target.value)
+                        }
+                        placeholder="$input.items"
+                        className="w-full bg-[#1a1a1a] border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-orange-500 font-mono"
+                      />
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        Evaluates to an array. Emits `loop` for each item. When
+                        done, emits `done`.
                       </p>
                     </div>
                   </>

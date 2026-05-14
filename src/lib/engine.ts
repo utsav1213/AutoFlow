@@ -56,6 +56,49 @@ export async function runWorkflow(workflow: any, executionId: string) {
         handledCondition = true;
       }
 
+      // For-Each Loop
+      let handledLoop = false;
+      let loopItems: any[] = [];
+      if (node.data?.type === "loop" || node.type === "loop") {
+        const expression =
+          node.data?.arrayExpression || node.params?.arrayExpression || "[]";
+        try {
+          const fn = new Function("$input", `return ${expression};`);
+          const res = fn(inputData);
+          if (Array.isArray(res)) loopItems = res;
+        } catch (e) {
+          console.error("Loop error:", e);
+        }
+        outputData = loopItems;
+        handledLoop = true;
+      }
+
+      // Delay action
+      if (node.data?.type === "delay" || node.type === "delay") {
+        const durationSetting =
+          node.data?.duration || node.params?.duration || "1000";
+        const duration = parseInt(durationSetting, 10) || 1000;
+        console.log(`Sleeping for ${duration}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, duration));
+        outputData = `Delayed for ${duration}ms`;
+      }
+
+      // Custom Code action
+      if (node.data?.type === "code" || node.type === "code") {
+        const code = node.data?.code || node.params?.code || "return $input;";
+        console.log("Executing Custom Code...");
+        try {
+          const AsyncFunction = Object.getPrototypeOf(
+            async function () {},
+          ).constructor;
+          const fn = new AsyncFunction("$input", code);
+          outputData = await fn(inputData);
+        } catch (err: any) {
+          console.error("Custom Code Error:", err);
+          outputData = `Error: ${err.message}`;
+        }
+      }
+
       // Telegram action
       if (node.data?.type === "telegram" || node.type === "telegram") {
         const credential = await prisma.credential.findUnique({
@@ -222,6 +265,26 @@ export async function runWorkflow(workflow: any, executionId: string) {
         outputData = output;
       }
 
+      // SQL Query action
+      if (node.data?.type === "sql" || node.type === "sql") {
+        const connectionString =
+          node.data?.connectionString || node.params?.connectionString;
+        const query = node.data?.query || node.params?.query;
+
+        if (!connectionString) throw new Error("Missing SQL Connection String");
+        if (!query) throw new Error("Missing SQL Query");
+
+        const { Client } = await import("pg");
+        const client = new Client({ connectionString });
+        await client.connect();
+
+        console.log(`Executing SQL Query: ${query}`);
+        const res = await client.query(query);
+        await client.end();
+
+        outputData = res.rows;
+      }
+
       // File Storage action
       if (node.data?.type === "storage" || node.type === "storage") {
         const path = node.data?.path || node.params?.path;
@@ -261,11 +324,31 @@ export async function runWorkflow(workflow: any, executionId: string) {
           if (edge.sourceHandle && edge.sourceHandle !== expectedHandle) {
             continue; // skip this edge
           }
-        }
-
-        const nextNode = nodeMap.get(edge.target);
-        if (nextNode) {
-          queue.push({ node: nextNode, inputData: node.data });
+          const nextNode = nodeMap.get(edge.target);
+          if (nextNode) {
+            queue.push({ node: nextNode, inputData: node.data });
+          }
+        } else if (handledLoop) {
+          const nextNode = nodeMap.get(edge.target);
+          if (nextNode) {
+            if (edge.sourceHandle === "loop") {
+              for (const item of loopItems) {
+                // Pass each item directly as output
+                queue.push({
+                  node: nextNode,
+                  inputData: { ...node.data, output: item },
+                });
+              }
+            } else if (edge.sourceHandle === "done") {
+              // Pass the full array for the done path
+              queue.push({ node: nextNode, inputData: node.data });
+            }
+          }
+        } else {
+          const nextNode = nodeMap.get(edge.target);
+          if (nextNode) {
+            queue.push({ node: nextNode, inputData: node.data });
+          }
         }
       }
     } catch (error: any) {
