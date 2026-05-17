@@ -1,5 +1,43 @@
 import prisma from "./prisma";
-import axios from "axios";
+import { executors } from "./nodes";
+
+function interpolateStr(str: string, data: any): string {
+  if (typeof str !== "string") return str;
+  return str.replace(/\$\{([^}]+)\}/g, (match, path) => {
+    try {
+      const keys = path.trim().split(".");
+      let val = data;
+      for (const key of keys) {
+        if (val === undefined || val === null) return match;
+        val = val[key];
+      }
+      return val !== undefined
+        ? typeof val === "object"
+          ? JSON.stringify(val)
+          : String(val)
+        : match;
+    } catch {
+      return match;
+    }
+  });
+}
+
+function deepInterpolate(obj: any, data: any): any {
+  if (typeof obj === "string") {
+    return interpolateStr(obj, data);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deepInterpolate(item, data));
+  }
+  if (obj !== null && typeof obj === "object") {
+    const res: any = {};
+    for (const key in obj) {
+      res[key] = deepInterpolate(obj[key], data);
+    }
+    return res;
+  }
+  return obj;
+}
 
 export async function runWorkflow(workflow: any, executionId: string) {
   let completedTasks = 0;
@@ -27,274 +65,32 @@ export async function runWorkflow(workflow: any, executionId: string) {
     visited.add(node.id);
 
     try {
-      console.log(`Running node [${node.data?.type}]:`, node.id);
+      node.data = deepInterpolate(node.data || {}, inputData);
+      node.params = deepInterpolate(node.params || {}, inputData);
 
-      // Node output will hold the final result of this node's executed action
+      const type = node.data?.type || node.type;
+      console.log(`Running node [${type}]:`, node.id);
+
       let outputData = node.data?.output || null;
-
-      // Logic: If / Else Condition
       let handledCondition = false;
       let conditionResult = false;
-      if (node.data?.type === "condition" || node.type === "condition") {
-        const expression =
-          node.data?.expression || node.params?.expression || "false";
-        try {
-          // create a safe evaluator where $input is the previous node's data
-          const fn = new Function("$input", `return ${expression};`);
-          conditionResult = fn(inputData);
-          console.log(
-            `Evaluating Condition: ${expression} with $input=`,
-            inputData,
-            "Result:",
-            conditionResult,
-          );
-        } catch (e) {
-          console.error("Condition error:", e);
-          conditionResult = false;
-        }
-        outputData = conditionResult; // save result directly
-        handledCondition = true;
-      }
-
-      // For-Each Loop
       let handledLoop = false;
       let loopItems: any[] = [];
-      if (node.data?.type === "loop" || node.type === "loop") {
-        const expression =
-          node.data?.arrayExpression || node.params?.arrayExpression || "[]";
-        try {
-          const fn = new Function("$input", `return ${expression};`);
-          const res = fn(inputData);
-          if (Array.isArray(res)) loopItems = res;
-        } catch (e) {
-          console.error("Loop error:", e);
+
+      const executor = executors[type];
+      if (executor) {
+        const result = await executor(node, inputData);
+        outputData = result.outputData;
+        if (result.handledCondition) {
+          handledCondition = result.handledCondition;
+          conditionResult = result.conditionResult || false;
         }
-        outputData = loopItems;
-        handledLoop = true;
-      }
-
-      // Delay action
-      if (node.data?.type === "delay" || node.type === "delay") {
-        const durationSetting =
-          node.data?.duration || node.params?.duration || "1000";
-        const duration = parseInt(durationSetting, 10) || 1000;
-        console.log(`Sleeping for ${duration}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, duration));
-        outputData = `Delayed for ${duration}ms`;
-      }
-
-      // Custom Code action
-      if (node.data?.type === "code" || node.type === "code") {
-        const code = node.data?.code || node.params?.code || "return $input;";
-        console.log("Executing Custom Code...");
-        try {
-          const AsyncFunction = Object.getPrototypeOf(
-            async function () {},
-          ).constructor;
-          const fn = new AsyncFunction("$input", code);
-          outputData = await fn(inputData);
-        } catch (err: any) {
-          console.error("Custom Code Error:", err);
-          outputData = `Error: ${err.message}`;
+        if (result.handledLoop) {
+          handledLoop = result.handledLoop;
+          loopItems = result.loopItems || [];
         }
-      }
-
-      // Telegram action
-      if (node.data?.type === "telegram" || node.type === "telegram") {
-        const credential = await prisma.credential.findUnique({
-          where: { id: node.data?.credentialId || node.credentialId },
-        });
-
-        const data = credential?.data as { token?: string };
-        const token = data?.token;
-
-        if (!token) throw new Error("Missing Telegram token");
-
-        await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-          chat_id: node.data?.chatId || node.params?.chatId,
-          text: node.data?.message || node.params?.message || "From AutoFlow",
-        });
-      }
-
-      // Resend Email action
-      if (node.data?.type === "resend" || node.type === "resend") {
-        const credential = await prisma.credential.findUnique({
-          where: { id: node.data?.credentialId || node.credentialId },
-        });
-
-        const data = credential?.data as { apiKey?: string };
-        const apiKey = data?.apiKey;
-
-        if (!apiKey) throw new Error("Missing Resend API Key");
-
-        await axios.post(
-          "https://api.resend.com/emails",
-          {
-            from: "Autoflow <onboarding@resend.dev>",
-            to: [node.data?.to || node.params?.to],
-            subject:
-              node.data?.subject ||
-              node.params?.subject ||
-              "Workflow Notification",
-            html: `<p>${node.data?.body || node.params?.body}</p>`,
-          },
-          { headers: { Authorization: `Bearer ${apiKey}` } },
-        );
-      }
-
-      // LLM Response action
-      if (node.data?.type === "llm" || node.type === "llm") {
-        let apiKey, provider;
-
-        if (node.data?.credentialId || node.credentialId) {
-          const credential = await prisma.credential.findUnique({
-            where: { id: node.data?.credentialId || node.credentialId },
-          });
-          const data = credential?.data as {
-            provider?: string;
-            apiKey?: string;
-          };
-          provider = data?.provider || "openai";
-          apiKey = data?.apiKey;
-        } else {
-          // Default to gemini if no credential and use env var
-          provider = "gemini";
-          apiKey =
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-            process.env.GEMINI_API_KEY;
-        }
-
-        if (!apiKey)
-          throw new Error(`Missing API Key for LLM provider: ${provider}`);
-
-        const prompt =
-          node.data?.prompt || node.params?.prompt || "Say hello world";
-
-        if (provider === "openai") {
-          const res = await axios.post(
-            "https://api.openai.com/v1/chat/completions",
-            {
-              model: "gpt-3.5-turbo",
-              messages: [{ role: "user", content: prompt }],
-            },
-            { headers: { Authorization: `Bearer ${apiKey}` } },
-          );
-          outputData = res.data?.choices?.[0]?.message?.content;
-        } else if (provider === "gemini") {
-          const { generateText } = await import("ai");
-          const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-
-          const google = createGoogleGenerativeAI({
-            apiKey: apiKey,
-          });
-
-          const { text } = await generateText({
-            model: google("gemini-1.5-flash"),
-            prompt: prompt,
-          });
-
-          console.log("LLM output:", text);
-          outputData = text;
-        } else if (provider === "anthropic") {
-          const res = await axios.post(
-            "https://api.anthropic.com/v1/messages",
-            {
-              model: "claude-3-haiku-20240320",
-              max_tokens: 1024,
-              messages: [{ role: "user", content: prompt }],
-            },
-            {
-              headers: {
-                "x-api-key": apiKey,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-              },
-            },
-          );
-          outputData = res.data?.content?.[0]?.text;
-        }
-      }
-
-      // HTTP Request action
-      if (node.data?.type === "http" || node.type === "http") {
-        const url = node.data?.url || node.params?.url;
-        const method = (
-          node.data?.method ||
-          node.params?.method ||
-          "GET"
-        ).toLowerCase();
-        let headers = {};
-        try {
-          headers = JSON.parse(
-            node.data?.headers || node.params?.headers || "{}",
-          );
-        } catch (e) {}
-        let data = undefined;
-        try {
-          data = JSON.parse(node.data?.body || node.params?.body || "{}");
-        } catch (e) {
-          data = node.data?.body;
-        }
-
-        if (!url) throw new Error("Missing HTTP URL");
-
-        const response = await axios({ method, url, headers, data });
-        outputData =
-          typeof response.data === "object"
-            ? JSON.stringify(response.data)
-            : response.data;
-      }
-
-      // Web Scraper action
-      if (node.data?.type === "scraper" || node.type === "scraper") {
-        const url = node.data?.url || node.params?.url;
-        const selector = node.data?.selector || node.params?.selector;
-
-        if (!url) throw new Error("Missing Scraper URL");
-
-        const { data } = await axios.get(url);
-        let output = "";
-        if (selector) {
-          const cheerio = await import("cheerio");
-          const $ = cheerio.load(data);
-          output = $(selector).text();
-        } else {
-          output = data.substring(0, 2000); // return basic truncated mock
-        }
-
-        outputData = output;
-      }
-
-      // SQL Query action
-      if (node.data?.type === "sql" || node.type === "sql") {
-        const connectionString =
-          node.data?.connectionString || node.params?.connectionString;
-        const query = node.data?.query || node.params?.query;
-
-        if (!connectionString) throw new Error("Missing SQL Connection String");
-        if (!query) throw new Error("Missing SQL Query");
-
-        const { Client } = await import("pg");
-        const client = new Client({ connectionString });
-        await client.connect();
-
-        console.log(`Executing SQL Query: ${query}`);
-        const res = await client.query(query);
-        await client.end();
-
-        outputData = res.rows;
-      }
-
-      // File Storage action
-      if (node.data?.type === "storage" || node.type === "storage") {
-        const path = node.data?.path || node.params?.path;
-        const content = node.data?.content || node.params?.content;
-        const provider = node.data?.provider || "local";
-
-        if (!path) throw new Error("Missing File Path");
-
-        console.log(`[Storage Node - ${provider}] Saving to ${path}:`, content);
-        outputData = `Saved to ${provider} at ${path}`;
+      } else {
+        console.warn(`No executor found for node type: ${type}`);
       }
 
       node.data = { ...node.data, output: outputData };
@@ -319,7 +115,6 @@ export async function runWorkflow(workflow: any, executionId: string) {
       const outgoingEdges = edges.filter((e: any) => e.source === node.id);
       for (const edge of outgoingEdges) {
         if (handledCondition) {
-          // If this was a condition, only traverse the matching edge (true or false source handle)
           const expectedHandle = conditionResult ? "true" : "false";
           if (edge.sourceHandle && edge.sourceHandle !== expectedHandle) {
             continue; // skip this edge
@@ -333,14 +128,12 @@ export async function runWorkflow(workflow: any, executionId: string) {
           if (nextNode) {
             if (edge.sourceHandle === "loop") {
               for (const item of loopItems) {
-                // Pass each item directly as output
                 queue.push({
                   node: nextNode,
                   inputData: { ...node.data, output: item },
                 });
               }
             } else if (edge.sourceHandle === "done") {
-              // Pass the full array for the done path
               queue.push({ node: nextNode, inputData: node.data });
             }
           }
@@ -373,7 +166,6 @@ export async function runWorkflow(workflow: any, executionId: string) {
     }
   }
 
-  // Double check if previously set as failed
   const currentExecution = await prisma.execution.findUnique({
     where: { id: executionId },
   });
